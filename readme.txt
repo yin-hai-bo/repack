@@ -1,0 +1,3 @@
+repack
+解析指定的原始APK，重新添写AndroidManifest.xml中友盟的渠道字段，并生成各渠道对应的APK
+（打包工具）
