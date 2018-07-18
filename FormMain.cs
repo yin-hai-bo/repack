@@ -1,12 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Text;
 using System.Windows.Forms;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 namespace repack {
     public partial class FormMain : Form {
@@ -19,6 +16,60 @@ namespace repack {
             string lpParameters,
             string lpDirectory,
             int nShowCmd);
+
+        /// <summary>
+        /// Parse a special format filename, extract all elements, and build new filename.
+        /// The format is:
+        ///     prefix-versionname-versioncode-time-channel-other
+        /// Example:
+        ///     gm-4.9.0.2-vc140-0718-1447-google-861147d.apk
+        /// </summary>
+        private class FileNameElements {
+
+            public readonly string Prefix;
+            public readonly string VersionName;
+            public readonly string VersionCode;
+            public readonly string BuildTime;
+            public readonly string Channel;
+            public readonly string CommitId;
+
+            /// <summary>
+            /// Parse filename, return null when format invalid
+            /// </summary>
+            /// <param name="filenameWithoutDir">filename, special format, like: gm-4.9.0.2-vc140-0718-1447-google-861147d.apk</param>
+            /// <returns></returns>
+            public static FileNameElements Parse(string filenameWithoutDir) {
+                string[] fields = filenameWithoutDir.Split('-');
+                if (fields.Length == 6) {
+                    var match = Regex.Match(fields[2], @"[^\d]*(\d+)");
+                    string verCode = match.Success ? match.Groups[1].Value : fields[2];
+                    return new FileNameElements(fields[0], fields[1], verCode, fields[3], fields[4], fields[5]);
+                } else {
+                    return null;
+                }
+            }
+
+            private FileNameElements(
+                string prefix,
+                string versionName,
+                string versionCode,
+                string buildTime,
+                string channel,
+                string commitId
+            ) {
+                this.Prefix = prefix;
+                this.VersionName = versionName;
+                this.VersionCode = versionCode;
+                this.BuildTime = buildTime;
+                this.Channel = channel;
+                this.CommitId = commitId;
+            }
+
+            public String BuildWithNewChannel(string newChannel) {
+                return String.Format("{0}-{1}-vc{2}-{3}-{4}-{5}",
+                    Prefix, VersionName, VersionCode, BuildTime, newChannel, CommitId);
+            }
+        }
 
         /// <summary>
         /// 状态的抽象基类
@@ -196,13 +247,28 @@ namespace repack {
             }
 
             private void worker_DoWork(object sender, DoWorkEventArgs e) {
+                string srcBaseFileName = Path.GetFileNameWithoutExtension(owner.ApkFilename);
+                FileNameElements elements = FileNameElements.Parse(srcBaseFileName);
+                if (elements == null) {
+                    throw new Exception("原始文件名格式无效，无法解析。\r\nExpected: prefix-verName-verCode-time-channel-commitId.apk");
+                }
 
+                string outputDir = string.Format(@"output\{0}-{1}-{2}-{3}-{4}",
+                    elements.Prefix, elements.VersionName, elements.VersionCode, elements.BuildTime, elements.CommitId);
                 string workDir = "temp";
-                string baseName = Path.GetFileNameWithoutExtension(owner.ApkFilename);
-                string outputDir = "output\\" + baseName;
 
                 AndroidManifest am = DoUnpack(owner.ApkFilename, workDir);
                 ShowAndroidManifest(am);
+                if (am.VersionCode != elements.VersionCode) {
+                    throw new Exception("原始文件名中VersionCode与解包后实际值不符");
+                }
+                if (am.VersionName != elements.VersionName) {
+                    throw new Exception("原始文件名中VersionName与解包后实际值不符");
+                }
+                if (am.Channel != elements.Channel) {
+                    throw new Exception("原始文件名中渠道名称与解包后实际值不符");
+                }
+
                 //
                 if (Directory.Exists(outputDir)) {
                     Directory.Delete(outputDir, true);
@@ -214,21 +280,23 @@ namespace repack {
                         break;
                     }
                     string channel = project.GetChannel(i);
+                    string newBaseName = elements.BuildWithNewChannel(channel);
+
                     SetListViewState(i, "打包");
-                    string unsignedFilename = Utils.MakeFilename(outputDir, string.Format("{0}_{1}_unsigned.apk", baseName, channel));
-                    DoPack(baseName, workDir, am, channel, unsignedFilename);
+                    string unsignedFilename = Utils.MakeFilename(outputDir, string.Format("{0}-unsigned.apk", newBaseName));
+                    DoPack(srcBaseFileName, workDir, am, channel, unsignedFilename);
                     if (worker.CancellationPending) {
                         break;
                     }
                     SetListViewState(i, "签名");
-                    string signedFilename = Utils.MakeFilename(outputDir, string.Format("{0}_{1}_unaligned.apk", baseName, channel));
+                    string signedFilename = Utils.MakeFilename(outputDir, string.Format("{0}-unaligned.apk", newBaseName));
                     DoSign(project, unsignedFilename, signedFilename);
                     File.Delete(unsignedFilename);
                     if (worker.CancellationPending) {
                         break;
                     }
                     SetListViewState(i, "对齐");
-                    string finalFilename = Utils.MakeFilename(outputDir, string.Format("{0}_{1}.apk", baseName, channel));
+                    string finalFilename = Utils.MakeFilename(outputDir, string.Format("{0}.apk", newBaseName));
                     DoAlign(signedFilename, finalFilename);
                     //
                     SetListViewState(i, "完成");
