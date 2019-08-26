@@ -312,8 +312,10 @@ namespace repack {
                     OnProgress("删除临时目录……");
                     Directory.Delete(outputDir, true);
                 }
+
                 OnProgress("准备对APK进行解包……");
-                ProcessInvoker.Execute(this, "java.exe", String.Format("-jar tools\\apktool.jar d -f -s -o {0} {1}", outputDir, apkName), true);
+                ProcessInvoker.Execute(this, ProcessInvoker.BuildExeFullPath("java.exe"),
+                    String.Format("-jar tools\\apktool.jar d -f -s -o {0} {1}", outputDir, apkName), true);
                 OnProgress("解包完成！");
                 //
                 OnProgress("解析AndroidManifest.xml……");
@@ -329,14 +331,15 @@ namespace repack {
                 }
                 am.Channel = channel;
                 am.Save();
-                ProcessInvoker.Execute(this, "java.exe", String.Format("-jar tools\\apktool.jar b -f -o {0} {1}", destFilename, sourDir), true);
+                ProcessInvoker.Execute(this, ProcessInvoker.BuildExeFullPath("java.exe"),
+                    String.Format("-jar tools\\apktool.jar b -f -o {0} {1}", destFilename, sourDir), true);
                 OnProgress("打包完成");
             }
 
             private void DoSign(Project project, string unsignedApkFilename, string signedApkFilename) {
                 OnProgress("准备签名：" + unsignedApkFilename);
                 File.Delete(signedApkFilename);
-                ProcessInvoker.Execute(this, "jarsigner.exe",
+                ProcessInvoker.Execute(this, ProcessInvoker.BuildExeFullPath("jarsigner.exe"),
                     string.Format("-keystore \"{0}\" -storepass \"{1}\" -digestalg SHA1 -sigalg MD5withRSA -keypass \"{2}\" -signedjar \"{3}\" \"{4}\" \"{5}\"",
                             project.KeyStore, project.StorePassword, project.AliasPassword, signedApkFilename, unsignedApkFilename, project.Alias),
                     false

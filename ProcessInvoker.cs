@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Diagnostics;
+using System.IO;
 
 namespace repack {
     static class ProcessInvoker {
@@ -27,6 +28,7 @@ namespace repack {
                 psi.Arguments = args;
                 psi.UseShellExecute = false;
                 psi.RedirectStandardOutput = true;
+                psi.WorkingDirectory = Path.GetDirectoryName(System.Windows.Forms.Application.ExecutablePath);
                 if (!process.Start()) {
                     throw new Exception("启动进程失败");
                 }
@@ -42,6 +44,26 @@ namespace repack {
                     throw new Exception(string.Format("进程退出码不为零(#{0})", process.ExitCode));
                 }
             }
+        }
+
+        /// <summary>
+        /// 确定给定的exe文件的全路径。（在Path环境变量里依次查找，直到找到）
+        /// </summary>
+        /// <param name="exeName">EXE文件名，如"java.exe"</param>
+        /// <returns>EXE文件的全路径</returns>
+        public static string BuildExeFullPath(string exeName) {
+            if (File.Exists(exeName)) {
+                return exeName;
+            }
+            var enviromentPath = Environment.GetEnvironmentVariable("PATH");
+            var paths = enviromentPath.Split(';');
+            foreach (var path in paths) {
+                var exePath = Path.Combine(path, exeName);
+                if (File.Exists(exePath)) {
+                    return exePath;
+                }
+            }
+            throw new IOException(string.Format("可执行程序 \"{0}\" 不存在", exeName));
         }
     }
 }
